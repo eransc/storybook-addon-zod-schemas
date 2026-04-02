@@ -43,11 +43,14 @@ function extractArgTypesFromSource(source: string, filePath: string): {
   description?: string;
 } | null {
   // Extract component name from filename: Button.stories.tsx → Button
+  // Also sanitize hyphens to produce valid JS identifiers
   const fileBaseName = basename(filePath)
-    .replace(/\.stories\.(tsx?|jsx?|mdx)$/, '');
+    .replace(/\.stories\.(tsx?|jsx?|mdx)$/, '')
+    .replace(/(^|-)(\w)/g, (_m, _sep, c) => c.toUpperCase());
 
   // Find argTypes: { ... } with balanced brace matching
-  const argTypesStart = source.match(/argTypes\s*:\s*\{/);
+  // Try meta-level first (argTypes: { ... }), then story-level (Story.argTypes = { ... })
+  const argTypesStart = source.match(/argTypes\s*[=:]\s*\{/);
   if (!argTypesStart) {
     return null;
   }
@@ -65,11 +68,12 @@ function extractArgTypesFromSource(source: string, filePath: string): {
 
     // Find each top-level prop: `propName: { ... }`
     // We need to find prop names followed by `{` and then match balanced braces
-    const propStartRegex = /(\w+)\s*:\s*\{/g;
+    // Match prop names: word chars, or quoted strings like 'aria-disabled'
+    const propStartRegex = /(?:['"]([^'"]+)['"]|(\w+))\s*:\s*\{/g;
     let propStartMatch;
 
     while ((propStartMatch = propStartRegex.exec(argTypesText)) !== null) {
-      const propName = propStartMatch[1];
+      const propName = propStartMatch[1] || propStartMatch[2];
       const propBraceStart = argTypesText.indexOf('{', propStartMatch.index);
       const propBraceEnd = findMatchingBrace(argTypesText, propBraceStart);
       if (propBraceEnd === -1) continue;
@@ -81,10 +85,15 @@ function extractArgTypesFromSource(source: string, filePath: string): {
 
       const argType: Record<string, any> = {};
 
-      // Extract control
-      const controlMatch = propBody.match(/control\s*:\s*['"](\w+)['"]/);
-      if (controlMatch) {
-        argType.control = controlMatch[1];
+      // Extract control — handles both forms:
+      //   control: 'select'
+      //   control: { type: 'select' }
+      const controlStringMatch = propBody.match(/control\s*:\s*['"](\w+)['"]/);
+      const controlObjectMatch = propBody.match(/control\s*:\s*\{[^}]*type\s*:\s*['"](\w+)['"]/);
+      if (controlStringMatch) {
+        argType.control = controlStringMatch[1];
+      } else if (controlObjectMatch) {
+        argType.control = controlObjectMatch[1];
       }
 
       // Extract control: false
