@@ -2,6 +2,73 @@
 
 Auto-generate **Zod schemas** (TypeScript) and **Pydantic models** (Python) from Storybook ArgTypes — for LLM tool calling, AI chat UIs, and component registries.
 
+## Quick Start (Try It on Your Storybook)
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/eransc/storybook-addon-zod-schemas.git
+cd storybook-addon-zod-schemas
+
+# 2. Install dependencies and build
+npm install
+npm run build
+
+# 3. Run against your Storybook project's stories
+node dist/cli/index.js generate --stories "/path/to/your-project/src/**/*.stories.tsx"
+
+# Output will be in ./generated/schemas/ (Zod) and ./generated/models/ (Pydantic)
+```
+
+That's it. Replace `/path/to/your-project/src/**/*.stories.tsx` with the actual glob pattern to your story files.
+
+### Custom output directory
+
+```bash
+node dist/cli/index.js generate \
+  --stories "/path/to/your-project/src/**/*.stories.tsx" \
+  --output "/path/to/your-project/generated"
+```
+
+### What to expect
+
+For a project with 10 components, you'll see:
+
+```
+[zod-schemas] Found 10 story files
+
+  [██████████████████████████████] 10/10 (100%) Processing: Avatar.stories.tsx
+
+  ✓ Generated schemas for 10 components
+
+    Button
+    Card
+    Input
+    Modal
+    ...
+
+  TypeScript: /path/to/generated/schemas
+  Python:     /path/to/generated/components
+```
+
+Generated files:
+- `schemas/Button.ts` — Zod schema for each component
+- `components/button.py` — Pydantic model for each component
+- `registry.ts` — combined TypeScript registry importing all schemas
+- `registry.py` — combined Python registry with Union types
+
+### Supported story patterns
+
+The CLI uses a Babel AST parser, so it handles:
+- ✅ Inline argTypes: `argTypes: { variant: { control: 'select', ... } }`
+- ✅ Object-form controls: `control: { type: 'text' }`
+- ✅ Variable references: `argTypes: sharedArgTypes`
+- ✅ Spread syntax: `argTypes: { ...sharedArgTypes, extraProp: { ... } }`
+- ✅ Story-level argTypes: `Story.argTypes = { ... }`
+- ✅ Both `.tsx` and `.js` story files
+- ⚠️ Cross-file imports not yet supported (e.g. `import { sharedArgs } from './shared'`)
+
+---
+
 ## Problem
 
 Teams building AI chat UIs with dynamic component rendering maintain three sources of truth:
