@@ -1,5 +1,8 @@
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 function managerEntries(entry: string[] = []) {
-  return [...entry, require.resolve('./manager')];
+  return [...entry, join(dirname(fileURLToPath(import.meta.url)), 'manager.js')];
 }
 
-module.exports = { managerEntries };
+export { managerEntries };

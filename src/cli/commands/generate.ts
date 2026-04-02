@@ -19,6 +19,21 @@ interface GenerateOptions {
 }
 
 /**
+ * Find the matching closing brace for an opening brace at position `start`.
+ */
+function findMatchingBrace(source: string, start: number): number {
+  let depth = 0;
+  for (let i = start; i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Extract argTypes from a story file by parsing its source.
  * This is a simplified static extraction — it looks for argTypes in the meta export.
  */
@@ -31,23 +46,39 @@ function extractArgTypesFromSource(source: string, filePath: string): {
   const fileBaseName = basename(filePath)
     .replace(/\.stories\.(tsx?|jsx?|mdx)$/, '');
 
-  // Try to find argTypes object in the source
-  const argTypesMatch = source.match(/argTypes\s*:\s*(\{[\s\S]*?\})\s*[,}]/);
-  if (!argTypesMatch) {
+  // Find argTypes: { ... } with balanced brace matching
+  const argTypesStart = source.match(/argTypes\s*:\s*\{/);
+  if (!argTypesStart) {
     return null;
   }
 
+  const braceStart = source.indexOf('{', argTypesStart.index!);
+  const braceEnd = findMatchingBrace(source, braceStart);
+  if (braceEnd === -1) {
+    return null;
+  }
+
+  const argTypesText = source.slice(braceStart + 1, braceEnd);
+
   try {
-    // Simple extraction of control types and options from the argTypes text
-    const argTypesText = argTypesMatch[1];
     const argTypes: Record<string, any> = {};
 
-    // Match individual argType entries: propName: { ... }
-    const propRegex = /(\w+)\s*:\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}/g;
-    let propMatch;
+    // Find each top-level prop: `propName: { ... }`
+    // We need to find prop names followed by `{` and then match balanced braces
+    const propStartRegex = /(\w+)\s*:\s*\{/g;
+    let propStartMatch;
 
-    while ((propMatch = propRegex.exec(argTypesText)) !== null) {
-      const [, propName, propBody] = propMatch;
+    while ((propStartMatch = propStartRegex.exec(argTypesText)) !== null) {
+      const propName = propStartMatch[1];
+      const propBraceStart = argTypesText.indexOf('{', propStartMatch.index);
+      const propBraceEnd = findMatchingBrace(argTypesText, propBraceStart);
+      if (propBraceEnd === -1) continue;
+
+      const propBody = argTypesText.slice(propBraceStart + 1, propBraceEnd);
+
+      // Move regex past this prop body to avoid matching nested props
+      propStartRegex.lastIndex = propBraceEnd + 1;
+
       const argType: Record<string, any> = {};
 
       // Extract control
@@ -79,7 +110,7 @@ function extractArgTypesFromSource(source: string, filePath: string): {
       // Extract defaultValue
       const defaultMatch = propBody.match(/defaultValue\s*:\s*(['"]([^'"]+)['"]|(\d+(?:\.\d+)?)|true|false)/);
       if (defaultMatch) {
-        const val = defaultMatch[0].replace('defaultValue:', '').trim();
+        const val = defaultMatch[0].replace(/defaultValue\s*:\s*/, '').trim();
         if (val === 'true') argType.defaultValue = true;
         else if (val === 'false') argType.defaultValue = false;
         else if (!isNaN(Number(val))) argType.defaultValue = Number(val);
