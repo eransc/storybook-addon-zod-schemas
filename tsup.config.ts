@@ -40,6 +40,8 @@ export default defineConfig([
     outDir: 'dist',
     platform: 'node',
     banner: { js: '#!/usr/bin/env node' },
+    noExternal: [],
+    external: ['glob', 'commander', '@babel/parser', '@babel/traverse', '@babel/types'],
     clean: false,
   },
 ]);

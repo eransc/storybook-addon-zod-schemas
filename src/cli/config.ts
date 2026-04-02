@@ -15,19 +15,42 @@ const DEFAULT_CONFIG: CliConfig = {
   exclude: [],
 };
 
-export async function loadConfig(configPath: string): Promise<CliConfig> {
-  const resolved = resolve(process.cwd(), configPath);
+const CONFIG_SEARCH_PATHS = [
+  'zod-schemas.config.js',
+  'zod-schemas.config.cjs',
+  '.storybook/zod-schemas.config.js',
+];
 
-  if (!existsSync(resolved)) {
-    return DEFAULT_CONFIG;
+export async function loadConfig(configPath?: string): Promise<CliConfig> {
+  // If explicit path given, use it
+  if (configPath) {
+    const resolved = resolve(process.cwd(), configPath);
+    if (!existsSync(resolved)) {
+      console.warn(`  Warning: Config not found at ${resolved}, using defaults\n`);
+      return DEFAULT_CONFIG;
+    }
+    return await loadConfigFile(resolved);
   }
 
+  // Auto-discover config file
+  for (const searchPath of CONFIG_SEARCH_PATHS) {
+    const resolved = resolve(process.cwd(), searchPath);
+    if (existsSync(resolved)) {
+      console.log(`  Using config: ${resolved}\n`);
+      return await loadConfigFile(resolved);
+    }
+  }
+
+  return DEFAULT_CONFIG;
+}
+
+async function loadConfigFile(filePath: string): Promise<CliConfig> {
   try {
-    const userConfig = await import(resolved);
+    const userConfig = await import(filePath);
     const config = userConfig.default || userConfig;
     return { ...DEFAULT_CONFIG, ...config };
-  } catch {
-    console.warn(`Warning: Could not load config from ${resolved}, using defaults`);
+  } catch (err) {
+    console.warn(`  Warning: Could not load config from ${filePath}, using defaults\n`);
     return DEFAULT_CONFIG;
   }
 }

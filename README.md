@@ -152,55 +152,86 @@ npm install storybook-addon-zod-schemas
 ## CLI Usage
 
 ```bash
-# Generate schemas for all stories
+# Generate schemas for all stories (output to ./generated/)
 npx zod-schemas-gen --stories "src/**/*.stories.tsx"
 
-# Custom output directory
-npx zod-schemas-gen --stories "src/**/*.stories.tsx" --output "./generated"
+# Control where output goes
+npx zod-schemas-gen --stories "src/**/*.stories.tsx" \
+  --out-ts "./packages/frontend/schemas" \
+  --out-py "./packages/backend/models"
 
-# TypeScript only
+# TypeScript only (no Python output)
 npx zod-schemas-gen --stories "src/**/*.stories.tsx" --ts-only
 
-# Python only
+# Python only (no TypeScript output)
 npx zod-schemas-gen --stories "src/**/*.stories.tsx" --py-only
 
-# With config file
-npx zod-schemas-gen --config .storybook/zod-schemas.config.js
+# Use a config file (see below)
+npx zod-schemas-gen --config zod-schemas.config.js
 ```
 
 ### Output Structure
 
+By default, output goes to `./generated/`:
+
 ```
 generated/
-├── schemas/          # Zod schemas (one per component)
+├── schemas/          # TypeScript — Zod schemas (one per component)
 │   ├── Button.ts
 │   ├── Card.ts
 │   └── Input.ts
-├── registry.ts       # Combined registry with all imports
-├── components/       # Pydantic models (one per component)
-│   ├── button.py
-│   ├── card.py
-│   └── input.py
-└── registry.py       # Combined Python registry
+├── registry.ts       # TypeScript — combined registry with all imports
+│
+├── models/
+│   ├── components/   # Python — Pydantic models (one per component)
+│   │   ├── button.py
+│   │   ├── card.py
+│   │   └── input.py
+│   └── registry.py   # Python — combined registry with Union type
 ```
+
+Use `--out-ts` and `--out-py` to place them wherever you want (e.g. in separate packages in a monorepo).
 
 ### Configuration
 
-Create `.storybook/zod-schemas.config.js`:
+For repeatable settings, create a config file:
+
+```bash
+npx zod-schemas-gen init   # Creates zod-schemas.config.js
+```
+
+Or create one manually:
 
 ```js
+// zod-schemas.config.js
 module.exports = {
-  stories: ['src/**/*.stories.tsx'],
+  // Where to find story files
+  stories: ['src/**/*.stories.tsx', 'src/**/*.stories.ts'],
+
+  // Where to write output
   output: {
     typescript: './generated/schemas',
     python: './generated/models',
   },
-  includeVercelAISDK: true,     // Wrap schemas with tool() from 'ai'
-  includeTamboRegistration: true, // Generate Tambo-compatible output
+
+  // Wrap Zod schemas with tool() from Vercel AI SDK
+  includeVercelAISDK: false,
+
+  // Generate Tambo-compatible { name, description, propsSchema } array
+  includeTamboRegistration: false,
+
+  // Generate registry.ts and registry.py index files
   generateIndex: true,
-  exclude: ['internal/**'],
+
+  // Header comment on all generated files
+  fileHeader: '// AUTO-GENERATED — DO NOT EDIT',
+
+  // Glob patterns to skip
+  exclude: ['**/internal/**', '**/*.test.stories.*'],
 };
 ```
+
+The CLI auto-discovers config from `zod-schemas.config.js` or `.storybook/zod-schemas.config.js`. Override with `--config <path>`.
 
 ## Storybook Addon (Optional)
 

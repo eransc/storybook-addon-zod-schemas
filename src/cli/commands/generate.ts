@@ -13,7 +13,8 @@ import type { GeneratedSchemas } from '../../types.js';
 interface GenerateOptions {
   config?: string;
   stories?: string;
-  output?: string;
+  outTs?: string;
+  outPy?: string;
   tsOnly?: boolean;
   pyOnly?: boolean;
 }
@@ -26,10 +27,14 @@ function progressBar(current: number, total: number, width: number = 30): string
 }
 
 export async function generate(options: GenerateOptions): Promise<void> {
-  const config = await loadConfig(options.config || '.storybook/zod-schemas.config.js');
+  const config = await loadConfig(options.config);
 
   const storyGlobs = options.stories ? [options.stories] : config.stories;
-  const outputDir = options.output || config.output.typescript;
+  const tsDir = resolve(options.outTs || config.output.typescript);
+  const pyDir = resolve(options.outPy || config.output.python);
+
+  const generateTs = !options.pyOnly;
+  const generatePy = !options.tsOnly;
 
   logger.info('Scanning for story files...');
 
@@ -37,7 +42,11 @@ export async function generate(options: GenerateOptions): Promise<void> {
   const storyFiles: string[] = [];
   for (const pattern of storyGlobs) {
     const { glob: globFn } = await import('glob');
-    const matches = await globFn(pattern, { cwd: process.cwd(), absolute: true });
+    const isAbsolute = pattern.startsWith('/');
+    const matches = await globFn(pattern, {
+      cwd: isAbsolute ? '/' : process.cwd(),
+      absolute: true,
+    });
     storyFiles.push(...matches);
   }
 
@@ -47,6 +56,11 @@ export async function generate(options: GenerateOptions): Promise<void> {
   });
 
   const total = filteredFiles.length;
+  if (total === 0) {
+    console.log('\n  No story files found. Check your --stories glob pattern.\n');
+    return;
+  }
+
   logger.info(`Found ${total} story files\n`);
 
   const allSchemas: GeneratedSchemas[] = [];
@@ -56,7 +70,6 @@ export async function generate(options: GenerateOptions): Promise<void> {
     const filePath = filteredFiles[i];
     const fileName = basename(filePath);
 
-    // Show progress
     process.stdout.write(`\r  ${progressBar(i + 1, total)} Processing: ${fileName}`);
 
     const source = await readFile(filePath, 'utf-8');
@@ -88,14 +101,12 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
     allSchemas.push(schemas);
 
-    // Write individual schema files
-    if (!options.pyOnly) {
-      const tsPath = resolve(outputDir, 'schemas', `${componentName}.ts`);
+    if (generateTs) {
+      const tsPath = resolve(tsDir, 'schemas', `${componentName}.ts`);
       await writeFileWithDirs(tsPath, zodSchema);
     }
 
-    if (!options.tsOnly) {
-      const pyDir = options.output || config.output.python;
+    if (generatePy) {
       const pyName = componentName.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
       const pyPath = resolve(pyDir, 'components', `${pyName}.py`);
       await writeFileWithDirs(pyPath, pydanticModel);
@@ -103,18 +114,17 @@ export async function generate(options: GenerateOptions): Promise<void> {
   }
 
   // Clear progress line
-  process.stdout.write('\r' + ' '.repeat(80) + '\r');
+  process.stdout.write('\r' + ' '.repeat(100) + '\r');
 
   // Generate registry files
   if (allSchemas.length > 0 && config.generateIndex) {
-    if (!options.pyOnly) {
+    if (generateTs) {
       const registryTs = generateTypescriptRegistry(allSchemas, config);
-      const registryPath = resolve(outputDir, 'registry.ts');
+      const registryPath = resolve(tsDir, 'registry.ts');
       await writeFileWithDirs(registryPath, registryTs);
     }
 
-    if (!options.tsOnly) {
-      const pyDir = options.output || config.output.python;
+    if (generatePy) {
       const registryPy = generatePythonRegistry(allSchemas, config);
       const registryPath = resolve(pyDir, 'registry.py');
       await writeFileWithDirs(registryPath, registryPy);
@@ -127,17 +137,11 @@ export async function generate(options: GenerateOptions): Promise<void> {
   if (allSchemas.length > 0) {
     console.log('');
     for (const schema of allSchemas) {
-      const propCount = parseArgTypes(schema.componentName, {}).props.length;
       console.log(`    ${schema.componentName}`);
     }
     console.log('');
-    if (!options.pyOnly) {
-      console.log(`  TypeScript: ${resolve(outputDir, 'schemas/')}`);
-    }
-    if (!options.tsOnly) {
-      const pyDir = options.output || config.output.python;
-      console.log(`  Python:     ${resolve(pyDir, 'components/')}`);
-    }
+    if (generateTs) console.log(`  TypeScript output: ${tsDir}`);
+    if (generatePy) console.log(`  Python output:     ${pyDir}`);
   }
   if (skipped.length > 0) {
     console.log(`\n  ⚠ Skipped ${skipped.length} files (no argTypes found)`);
