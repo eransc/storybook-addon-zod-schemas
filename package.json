@@ -46,6 +46,7 @@
     "@storybook/manager-api": "^8.4.0",
     "@storybook/preview-api": "^8.4.0",
     "@storybook/types": "^8.4.0",
+    "@types/babel__traverse": "^7.28.0",
     "@types/react": "^18.3.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
@@ -69,6 +70,9 @@
     }
   },
   "dependencies": {
+    "@babel/parser": "^7.29.2",
+    "@babel/traverse": "^7.29.0",
+    "@babel/types": "^7.29.0",
     "commander": "^14.0.3",
     "glob": "^13.0.6"
   }
