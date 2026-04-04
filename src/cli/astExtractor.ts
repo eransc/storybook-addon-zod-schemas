@@ -136,6 +136,46 @@ function extractArgTypesFromObject(
 }
 
 /**
+ * Unwrap TypeScript type assertions (as/satisfies) to get the underlying expression.
+ * e.g. `{ ... } as Meta<Props>` → `{ ... }`
+ */
+function unwrapTSExpression(node: t.Node): t.Node {
+  if (t.isTSAsExpression(node)) return unwrapTSExpression(node.expression);
+  if (t.isTSSatisfiesExpression(node)) return unwrapTSExpression(node.expression);
+  if (t.isTSTypeAssertion(node)) return unwrapTSExpression(node.expression);
+  return node;
+}
+
+/**
+ * Resolve a declaration node to an ObjectExpression, handling:
+ * - Direct object literals: `{ ... }`
+ * - TS type assertions: `{ ... } as Meta<Props>`
+ * - Variable references: `const meta = { ... }; export default meta`
+ */
+function resolveToObjectExpression(
+  decl: t.Node,
+  ast: t.File,
+): t.ObjectExpression | null {
+  const unwrapped = unwrapTSExpression(decl);
+
+  if (t.isObjectExpression(unwrapped)) {
+    return unwrapped;
+  }
+
+  if (t.isIdentifier(unwrapped)) {
+    const resolved = resolveBinding(ast, unwrapped.name);
+    if (resolved) {
+      const inner = unwrapTSExpression(resolved);
+      if (t.isObjectExpression(inner)) {
+        return inner;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Find the argTypes object from the default export meta or from story-level assignments.
  */
 function findArgTypesInAST(ast: t.File): t.ObjectExpression | null {
@@ -143,18 +183,10 @@ function findArgTypesInAST(ast: t.File): t.ObjectExpression | null {
 
   traverse(ast, {
     // Handle: export default { argTypes: { ... } }
+    // Also handles: export default { ... } as Meta<Props>
     ExportDefaultDeclaration(path) {
       const decl = path.node.declaration;
-      let metaObj: t.ObjectExpression | null = null;
-
-      if (t.isObjectExpression(decl)) {
-        metaObj = decl;
-      } else if (t.isIdentifier(decl)) {
-        const resolved = resolveBinding(ast, decl.name);
-        if (resolved && t.isObjectExpression(resolved)) {
-          metaObj = resolved;
-        }
-      }
+      const metaObj = resolveToObjectExpression(decl, ast);
 
       if (!metaObj) return;
 
@@ -208,16 +240,7 @@ function findTitleInAST(ast: t.File): string | null {
   traverse(ast, {
     ExportDefaultDeclaration(path) {
       const decl = path.node.declaration;
-      let metaObj: t.ObjectExpression | null = null;
-
-      if (t.isObjectExpression(decl)) {
-        metaObj = decl;
-      } else if (t.isIdentifier(decl)) {
-        const resolved = resolveBinding(ast, decl.name);
-        if (resolved && t.isObjectExpression(resolved)) {
-          metaObj = resolved;
-        }
-      }
+      const metaObj = resolveToObjectExpression(decl, ast);
 
       if (!metaObj) return;
 

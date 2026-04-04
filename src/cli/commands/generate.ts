@@ -8,7 +8,7 @@ import { generatePydanticModel } from '../../generators/pydanticGenerator.js';
 import { generateTypescriptRegistry, generatePythonRegistry } from '../../generators/registryGenerator.js';
 import { writeFileWithDirs } from '../../utils/fileWriter.js';
 import { logger } from '../../utils/logger.js';
-import type { GeneratedSchemas } from '../../types.js';
+import type { ComponentSchema, GeneratedSchemas } from '../../types.js';
 
 interface GenerateOptions {
   config?: string;
@@ -17,6 +17,7 @@ interface GenerateOptions {
   outPy?: string;
   tsOnly?: boolean;
   pyOnly?: boolean;
+  enrich?: boolean;
 }
 
 function progressBar(current: number, total: number, width: number = 30): string {
@@ -63,9 +64,10 @@ export async function generate(options: GenerateOptions): Promise<void> {
 
   logger.info(`Found ${total} story files\n`);
 
-  const allSchemas: GeneratedSchemas[] = [];
+  let allComponentSchemas: ComponentSchema[] = [];
   const skipped: string[] = [];
 
+  // Pass 1: Extract and parse all component schemas
   for (let i = 0; i < filteredFiles.length; i++) {
     const filePath = filteredFiles[i];
     const fileName = basename(filePath);
@@ -88,12 +90,30 @@ export async function generate(options: GenerateOptions): Promise<void> {
       continue;
     }
 
+    allComponentSchemas.push(componentSchema);
+  }
+
+  // Clear progress line
+  process.stdout.write('\r' + ' '.repeat(100) + '\r');
+
+  // Enrichment step: use LLM to add missing descriptions
+  if (options.enrich && allComponentSchemas.length > 0) {
+    console.log('  Enriching descriptions with LLM...');
+    const { enrichBatch } = await import('../../generators/enrichDescriptions.js');
+    allComponentSchemas = await enrichBatch(allComponentSchemas);
+    console.log('  ✓ Enrichment complete\n');
+  }
+
+  // Pass 2: Generate output files
+  const allSchemas: GeneratedSchemas[] = [];
+
+  for (const componentSchema of allComponentSchemas) {
     const zodSchema = generateZodSchema(componentSchema);
     const pydanticModel = generatePydanticModel(componentSchema);
 
     const schemas: GeneratedSchemas = {
-      componentName,
-      description,
+      componentName: componentSchema.name,
+      description: componentSchema.description,
       zodSchema,
       pydanticModel,
       timestamp: Date.now(),
@@ -102,19 +122,16 @@ export async function generate(options: GenerateOptions): Promise<void> {
     allSchemas.push(schemas);
 
     if (generateTs) {
-      const tsPath = resolve(tsDir, 'schemas', `${componentName}.ts`);
+      const tsPath = resolve(tsDir, 'schemas', `${componentSchema.name}.ts`);
       await writeFileWithDirs(tsPath, zodSchema);
     }
 
     if (generatePy) {
-      const pyName = componentName.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+      const pyName = componentSchema.name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
       const pyPath = resolve(pyDir, 'components', `${pyName}.py`);
       await writeFileWithDirs(pyPath, pydanticModel);
     }
   }
-
-  // Clear progress line
-  process.stdout.write('\r' + ' '.repeat(100) + '\r');
 
   // Generate registry files
   if (allSchemas.length > 0 && config.generateIndex) {
@@ -149,5 +166,31 @@ export async function generate(options: GenerateOptions): Promise<void> {
       console.log(`    - ${name}`);
     }
   }
+
+  // Complexity report — flag components with props LLMs can't handle
+  const complexComponents = allComponentSchemas.filter((schema) => {
+    const anyProps = schema.props.filter((p) => p.type === 'any');
+    const skippedCount = schema.skippedProps?.length ?? 0;
+    const totalOriginal = schema.props.length + skippedCount;
+    return anyProps.length > 2 || (totalOriginal > 0 && skippedCount / totalOriginal > 0.5);
+  });
+
+  if (complexComponents.length > 0) {
+    console.log('\n  --- Component Complexity Report ---');
+    console.log('  These components have props that LLMs cannot generate values for.');
+    console.log('  Consider creating simplified wrapper components:\n');
+    for (const schema of complexComponents) {
+      const anyProps = schema.props.filter((p) => p.type === 'any');
+      const parts: string[] = [];
+      if (anyProps.length > 0) {
+        parts.push(`${anyProps.length} untyped props (${anyProps.map((p) => p.name).join(', ')})`);
+      }
+      if (schema.skippedProps && schema.skippedProps.length > 0) {
+        parts.push(`${schema.skippedProps.length} skipped props`);
+      }
+      console.log(`    ${schema.name} — ${parts.join(', ')}`);
+    }
+  }
+
   console.log('');
 }

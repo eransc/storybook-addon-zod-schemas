@@ -16,10 +16,16 @@ export interface PropSchema {
   options?: string[];
 }
 
+export interface SkippedProp {
+  name: string;
+  reason: string;
+}
+
 export interface ComponentSchema {
   name: string;
   description?: string;
   props: PropSchema[];
+  skippedProps?: SkippedProp[];
 }
 
 export interface GeneratedSchemas {

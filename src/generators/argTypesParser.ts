@@ -1,4 +1,4 @@
-import type { ComponentSchema, PropSchema, PropType } from '../types.js';
+import type { ComponentSchema, PropSchema, PropType, SkippedProp } from '../types.js';
 
 interface ArgTypeControl {
   type?: string;
@@ -14,6 +14,7 @@ interface ArgTypeTable {
   type?: ArgTypeTableType;
   defaultValue?: { summary?: string };
   category?: string;
+  disable?: boolean;
 }
 
 interface ArgType {
@@ -88,6 +89,39 @@ function isEventHandler(propName: string, table?: ArgTypeTable): boolean {
   return /^on[A-Z]/.test(propName);
 }
 
+/** Props that an LLM cannot generate values for — React internals, render functions, etc. */
+const UNGENERATABLE_PROP_NAMES = new Set([
+  'children', 'className', 'style', 'ref', 'innerRef', 'forwardedRef', 'as',
+]);
+
+const UNGENERATABLE_TYPE_PATTERNS = [
+  'ReactNode', 'React.ReactNode',
+  'ReactElement', 'React.ReactElement',
+  'JSX.Element',
+  'React.FC', 'ComponentType', 'React.ComponentType',
+  'Ref<', 'React.Ref', 'MutableRefObject', 'RefObject',
+  'CSSProperties', 'React.CSSProperties',
+];
+
+function isUngeneratableProp(propName: string, argType: ArgType): string | null {
+  if (UNGENERATABLE_PROP_NAMES.has(propName)) {
+    return `'${propName}' is a React internal prop`;
+  }
+
+  if (/^render[A-Z]/.test(propName)) {
+    return `'${propName}' is a render prop (function returning JSX)`;
+  }
+
+  const typeSummary = argType.table?.type?.summary || argType.type?.name || '';
+  for (const pattern of UNGENERATABLE_TYPE_PATTERNS) {
+    if (typeSummary.includes(pattern)) {
+      return `'${propName}' has type ${pattern} (not LLM-generatable)`;
+    }
+  }
+
+  return null;
+}
+
 function serializeDefaultValue(value: unknown): unknown {
   if (value === undefined || value === null) return undefined;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -102,9 +136,22 @@ export function parseArgTypes(
   description?: string,
 ): ComponentSchema {
   const props: PropSchema[] = [];
+  const skippedProps: SkippedProp[] = [];
 
   for (const [propName, argType] of Object.entries(argTypes)) {
+    // Skip props explicitly hidden from the Storybook UI
+    if (argType.table?.disable === true) {
+      continue;
+    }
+
     if (isEventHandler(propName, argType.table)) {
+      skippedProps.push({ name: propName, reason: 'event handler' });
+      continue;
+    }
+
+    const ungeneratableReason = isUngeneratableProp(propName, argType);
+    if (ungeneratableReason) {
+      skippedProps.push({ name: propName, reason: ungeneratableReason });
       continue;
     }
 
@@ -124,6 +171,13 @@ export function parseArgTypes(
     let options = argType.options;
     if (!options && type === 'enum' && argType.table?.type?.summary) {
       options = extractEnumOptionsFromSummary(argType.table.type.summary);
+    }
+
+    // Filter out undefined/null values from options (e.g. from unresolved imported constants)
+    if (options) {
+      options = options.filter(
+        (o) => o !== undefined && o !== null && o !== 'undefined' && o !== 'null' && String(o) !== 'undefined',
+      );
     }
 
     // If we have enum type but no options, fall back to string
@@ -170,5 +224,6 @@ export function parseArgTypes(
     name: componentName,
     ...(description && { description }),
     props,
+    ...(skippedProps.length > 0 && { skippedProps }),
   };
 }

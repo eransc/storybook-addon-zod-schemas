@@ -39,6 +39,11 @@ function propToZod(prop: PropSchema): string {
       break;
   }
 
+  // Add description for LLM consumption
+  if (prop.description) {
+    base += `.describe(${JSON.stringify(prop.description)})`;
+  }
+
   // Apply modifiers
   if (prop.defaultValue !== undefined) {
     base += `.default(${serializeValue(prop.defaultValue)})`;
@@ -64,9 +69,6 @@ export function generateZodSchema(schema: ComponentSchema): string {
   lines.push(`export const ${schema.name}Schema = z.object({`);
 
   for (const prop of schema.props) {
-    if (prop.description) {
-      lines.push(`  /** ${prop.description} */`);
-    }
     lines.push(`  ${prop.name}: ${propToZod(prop)},`);
   }
 

@@ -14,6 +14,7 @@ program
   .option('--out-py <dir>', 'Output directory for Python/Pydantic models')
   .option('--ts-only', 'Generate only TypeScript/Zod schemas')
   .option('--py-only', 'Generate only Python/Pydantic models')
+  .option('--enrich', 'Use LLM to generate descriptions for undescribed props')
   .action(generate);
 
 program
