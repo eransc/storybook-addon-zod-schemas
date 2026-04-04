@@ -75,6 +75,18 @@ export function generateZodSchema(schema: ComponentSchema): string {
   lines.push('});');
   lines.push('');
   lines.push(`export type ${schema.name}Props = z.infer<typeof ${schema.name}Schema>;`);
+
+  if (schema.examples && schema.examples.length > 0) {
+    const constName = schema.name.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() + '_EXAMPLES';
+    lines.push('');
+    lines.push(`export const ${constName} = [`);
+    for (const example of schema.examples) {
+      lines.push(`  // ${example.name}`);
+      lines.push(`  ${JSON.stringify(example.props)},`);
+    }
+    lines.push('] as const;');
+  }
+
   lines.push('');
 
   return lines.join('\n');

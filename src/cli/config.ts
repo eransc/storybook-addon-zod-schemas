@@ -13,6 +13,7 @@ const DEFAULT_CONFIG: CliConfig = {
   generateIndex: true,
   fileHeader: '// AUTO-GENERATED — DO NOT EDIT',
   exclude: [],
+  maxExamplesPerComponent: 5,
 };
 
 const CONFIG_SEARCH_PATHS = [

@@ -15,6 +15,7 @@ program
   .option('--ts-only', 'Generate only TypeScript/Zod schemas')
   .option('--py-only', 'Generate only Python/Pydantic models')
   .option('--enrich', 'Use LLM to generate descriptions for undescribed props')
+  .option('--max-examples <n>', 'Max examples per component (default: 5)')
   .action(generate);
 
 program

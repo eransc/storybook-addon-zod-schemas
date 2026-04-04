@@ -17,8 +17,16 @@ export function generateTypescriptRegistry(
     lines.push("import { tool } from 'ai';");
   }
 
+  const schemasWithExamples: string[] = [];
   for (const schema of schemas) {
-    lines.push(`import { ${schema.componentName}Schema } from './schemas/${schema.componentName}';`);
+    const examplesConst = schema.componentName.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() + '_EXAMPLES';
+    const hasExamples = schema.examples && schema.examples.length > 0;
+    if (hasExamples) {
+      schemasWithExamples.push(schema.componentName);
+      lines.push(`import { ${schema.componentName}Schema, ${examplesConst} } from './schemas/${schema.componentName}';`);
+    } else {
+      lines.push(`import { ${schema.componentName}Schema } from './schemas/${schema.componentName}';`);
+    }
   }
 
   lines.push('');
@@ -44,6 +52,16 @@ export function generateTypescriptRegistry(
   lines.push('');
   lines.push('export type ComponentName = keyof typeof componentRegistry;');
   lines.push('');
+
+  if (schemasWithExamples.length > 0) {
+    lines.push('export const componentExamples = {');
+    for (const name of schemasWithExamples) {
+      const examplesConst = name.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase() + '_EXAMPLES';
+      lines.push(`  ${name}: ${examplesConst},`);
+    }
+    lines.push('};');
+    lines.push('');
+  }
 
   if (config.includeTamboRegistration) {
     lines.push('// Tambo-compatible component registration');
@@ -77,13 +95,23 @@ export function generatePythonRegistry(
   lines.push('');
   lines.push('from typing import Union');
 
+  const pyModulesWithExamples: string[] = [];
   for (const schema of schemas) {
     const moduleName = schema.componentName
       .replace(/([a-z])([A-Z])/g, '$1_$2')
       .toLowerCase();
-    lines.push(
-      `from .components.${moduleName} import ${schema.componentName}Component`,
-    );
+    const examplesConst = moduleName.toUpperCase() + '_EXAMPLES';
+    const hasExamples = schema.examples && schema.examples.length > 0;
+    if (hasExamples) {
+      pyModulesWithExamples.push(schema.componentName);
+      lines.push(
+        `from .components.${moduleName} import ${schema.componentName}Component, ${examplesConst}`,
+      );
+    } else {
+      lines.push(
+        `from .components.${moduleName} import ${schema.componentName}Component`,
+      );
+    }
   }
 
   lines.push('');
@@ -106,6 +134,19 @@ export function generatePythonRegistry(
   lines.push('}');
   lines.push('');
   lines.push('');
+
+  // Examples dict
+  if (pyModulesWithExamples.length > 0) {
+    lines.push('COMPONENT_EXAMPLES = {');
+    for (const name of pyModulesWithExamples) {
+      const moduleName = name.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+      const examplesConst = moduleName.toUpperCase() + '_EXAMPLES';
+      lines.push(`    "${name}": ${examplesConst},`);
+    }
+    lines.push('}');
+    lines.push('');
+    lines.push('');
+  }
 
   // Helper functions
   lines.push('def get_all_schemas() -> dict:');

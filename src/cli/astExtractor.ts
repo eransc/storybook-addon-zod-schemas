@@ -6,10 +6,16 @@ import { basename } from 'node:path';
 // Handle ESM/CJS interop for @babel/traverse
 const traverse = (typeof _traverse === 'function' ? _traverse : (_traverse as any).default) as typeof _traverse;
 
+interface StoryExample {
+  storyName: string;
+  args: Record<string, any>;
+}
+
 interface ExtractedArgTypes {
   componentName: string;
   argTypes: Record<string, any>;
   description?: string;
+  examples?: StoryExample[];
 }
 
 /**
@@ -263,6 +269,88 @@ function findTitleInAST(ast: t.File): string | null {
 }
 
 /**
+ * Check if a value is serializable (primitives, plain objects, arrays of primitives).
+ * Filters out undefined, functions, JSX elements, etc.
+ */
+function isSerializable(value: unknown): boolean {
+  if (value === null) return true;
+  if (value === undefined) return false;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.every(isSerializable);
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).every(isSerializable);
+  }
+  return false;
+}
+
+/**
+ * Extract args from named story exports.
+ * e.g. export const Primary: Story = { args: { variant: "solid" } }
+ */
+function findStoryArgsInAST(ast: t.File): StoryExample[] {
+  const examples: StoryExample[] = [];
+
+  traverse(ast, {
+    ExportNamedDeclaration(path) {
+      const decl = path.node.declaration;
+      if (!t.isVariableDeclaration(decl)) return;
+
+      for (const declarator of decl.declarations) {
+        if (!t.isIdentifier(declarator.id) || !declarator.init) continue;
+
+        const storyName = declarator.id.name;
+
+        // Skip non-PascalCase exports (not stories)
+        if (!/^[A-Z]/.test(storyName)) continue;
+
+        // Unwrap TS type assertions and resolve to object
+        const storyObj = resolveToObjectExpression(declarator.init, ast);
+        if (!storyObj) continue;
+
+        // Find the 'args' property
+        for (const prop of storyObj.properties) {
+          if (
+            t.isObjectProperty(prop) &&
+            t.isIdentifier(prop.key) &&
+            prop.key.name === 'args'
+          ) {
+            let argsNode = prop.value;
+
+            // Resolve variable references: args: defaultArgs
+            if (t.isIdentifier(argsNode)) {
+              const resolved = resolveBinding(ast, argsNode.name);
+              if (resolved) argsNode = resolved;
+            }
+
+            // Unwrap TS assertions on args value
+            argsNode = unwrapTSExpression(argsNode) as t.Expression;
+
+            if (t.isObjectExpression(argsNode)) {
+              const args = evaluateNode(argsNode);
+              if (args && typeof args === 'object' && !Array.isArray(args)) {
+                // Filter to only serializable values
+                const cleanArgs: Record<string, any> = {};
+                for (const [key, value] of Object.entries(args)) {
+                  if (isSerializable(value)) {
+                    cleanArgs[key] = value;
+                  }
+                }
+                if (Object.keys(cleanArgs).length > 0) {
+                  examples.push({ storyName, args: cleanArgs });
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+    },
+  });
+
+  return examples;
+}
+
+/**
  * Parse a story file and extract argTypes using Babel AST.
  */
 export function extractArgTypesAST(
@@ -304,8 +392,12 @@ export function extractArgTypesAST(
     componentName = sanitizeComponentName(fileName);
   }
 
+  // Extract examples from named story exports
+  const examples = findStoryArgsInAST(ast);
+
   return {
     componentName,
     argTypes,
+    ...(examples.length > 0 && { examples }),
   };
 }

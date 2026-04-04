@@ -18,6 +18,7 @@ interface GenerateOptions {
   tsOnly?: boolean;
   pyOnly?: boolean;
   enrich?: boolean;
+  maxExamples?: string;
 }
 
 function progressBar(current: number, total: number, width: number = 30): string {
@@ -82,8 +83,10 @@ export async function generate(options: GenerateOptions): Promise<void> {
       continue;
     }
 
-    const { componentName, argTypes, description } = extracted;
-    const componentSchema = parseArgTypes(componentName, argTypes, description);
+    const { componentName, argTypes, description, examples } = extracted;
+    const maxExamples = options.maxExamples ? parseInt(options.maxExamples, 10) : config.maxExamplesPerComponent;
+    const limitedExamples = examples?.slice(0, maxExamples);
+    const componentSchema = parseArgTypes(componentName, argTypes, description, limitedExamples);
 
     if (componentSchema.props.length === 0) {
       skipped.push(fileName);
@@ -117,6 +120,7 @@ export async function generate(options: GenerateOptions): Promise<void> {
       zodSchema,
       pydanticModel,
       timestamp: Date.now(),
+      ...(componentSchema.examples && { examples: componentSchema.examples }),
     };
 
     allSchemas.push(schemas);

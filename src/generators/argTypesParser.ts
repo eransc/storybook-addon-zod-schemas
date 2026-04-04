@@ -1,4 +1,4 @@
-import type { ComponentSchema, PropSchema, PropType, SkippedProp } from '../types.js';
+import type { ComponentExample, ComponentSchema, PropSchema, PropType, SkippedProp } from '../types.js';
 
 interface ArgTypeControl {
   type?: string;
@@ -134,6 +134,7 @@ export function parseArgTypes(
   componentName: string,
   argTypes: ArgTypes,
   description?: string,
+  rawExamples?: Array<{ storyName: string; args: Record<string, any> }>,
 ): ComponentSchema {
   const props: PropSchema[] = [];
   const skippedProps: SkippedProp[] = [];
@@ -220,10 +221,30 @@ export function parseArgTypes(
     props.push(prop);
   }
 
+  // Filter examples to only include props that exist in the final schema
+  let examples: ComponentExample[] | undefined;
+  if (rawExamples && rawExamples.length > 0) {
+    const validPropNames = new Set(props.map((p) => p.name));
+    examples = rawExamples
+      .map((ex) => {
+        const filteredProps: Record<string, any> = {};
+        for (const [key, value] of Object.entries(ex.args)) {
+          if (validPropNames.has(key)) {
+            filteredProps[key] = value;
+          }
+        }
+        return Object.keys(filteredProps).length > 0
+          ? { name: ex.storyName, props: filteredProps }
+          : null;
+      })
+      .filter((ex): ex is ComponentExample => ex !== null);
+  }
+
   return {
     name: componentName,
     ...(description && { description }),
     props,
     ...(skippedProps.length > 0 && { skippedProps }),
+    ...(examples && examples.length > 0 && { examples }),
   };
 }

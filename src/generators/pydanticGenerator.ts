@@ -148,5 +148,28 @@ export function generatePydanticModel(schema: ComponentSchema): string {
   lines.push(`    props: ${schema.name}Props`);
   lines.push('');
 
+  // Examples
+  if (schema.examples && schema.examples.length > 0) {
+    const constName = toSnakeCase(schema.name).toUpperCase() + '_EXAMPLES';
+    lines.push('');
+    lines.push(`${constName} = [`);
+    for (const example of schema.examples) {
+      lines.push(`    # ${example.name}`);
+      // Convert keys to snake_case for Python
+      const pyProps: Record<string, any> = {};
+      for (const [key, value] of Object.entries(example.props)) {
+        pyProps[toSnakeCase(key)] = value;
+      }
+      // Convert JS booleans to Python format
+      const pyStr = JSON.stringify(pyProps)
+        .replace(/\btrue\b/g, 'True')
+        .replace(/\bfalse\b/g, 'False')
+        .replace(/\bnull\b/g, 'None');
+      lines.push(`    ${pyStr},`);
+    }
+    lines.push(']');
+    lines.push('');
+  }
+
   return lines.join('\n');
 }

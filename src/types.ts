@@ -21,11 +21,17 @@ export interface SkippedProp {
   reason: string;
 }
 
+export interface ComponentExample {
+  name: string;
+  props: Record<string, any>;
+}
+
 export interface ComponentSchema {
   name: string;
   description?: string;
   props: PropSchema[];
   skippedProps?: SkippedProp[];
+  examples?: ComponentExample[];
 }
 
 export interface GeneratedSchemas {
@@ -34,6 +40,7 @@ export interface GeneratedSchemas {
   zodSchema: string;
   pydanticModel: string;
   timestamp: number;
+  examples?: ComponentExample[];
 }
 
 export interface ExportConfig {
@@ -58,4 +65,5 @@ export interface CliConfig {
   generateIndex: boolean;
   fileHeader: string;
   exclude: string[];
+  maxExamplesPerComponent: number;
 }
